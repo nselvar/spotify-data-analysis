@@ -1,0 +1,193 @@
+---
+title: "KNN Implementation for predicting song popularity using Spotify Dataset"
+author: "Nisha Selvarajan"
+date: "26 Sept 2020"
+output:
+  html_document:
+      theme: journal
+      toc: yes
+      toc_depth: 4
+      #toc_float: true
+  pdf_document:
+      toc: yes
+      toc_depth: 4
+      latex_engine: xelatex
+      #toc_float: true
+  word_document:
+      toc: yes
+      toc_depth: 4
+      #toc_float: true
+---
+
+
+### Objectives: 
+
+  ***Why Do Some Songs Become Popular?***
+  DJ Khaled boldly claimed to always know when a song will be a hit. We decided to further investigate by asking three key questions: Are there certain characteristics for hit songs, what are the largest influencers on a song’s success, and can old songs even predict the popularity of new songs? Predicting how popular a song will be is no easy task. To answer these questions, we made use of the spotify Song Dataset, and use knn machine learning to predict. We will finally present a model that can predict how likely a song will be a hit, with more than 85% accuracy.
+
+###  Data Description
+  + 27K Rows, with 14 columns. You can download data on the link https://www.kaggle.com/yamaerenay/spotify-dataset-19212020-160k-tracks
+  
+```{r, message = FALSE}
+library(knitr)
+library(kableExtra)
+
+df <- data.frame(Names = c("acousticness","danceability","energy",
+                           "duration_ms","instrumentalness","valence",
+                           "popularity","liveness","loudness",
+                           "speechiness","year","mode",
+                           "key","artists","genre"),
+                  Description = c("Numerical-confidence measure from 0.0 
+                  to 1.0 of whether the track is acoustic. 1.0 represents
+                  high confidence the track is acoustic.","Numerical- 
+                  Danceability describes how suitable a track is for 
+                  dancing based on a combination of musical elements
+                  including tempo, rhythm stability, beat strength, and 
+                  overall regularity. A value of 0.0 is least danceable 
+                  and 1.0 is most danceable.","Numerical-Energy is a measure
+                  from 0.0 to 1.0 and represents a perceptual measure of 
+                  intensity and activity. Typically, energetic tracks feel fast,
+                  loud, and noisy. For example, death metal has high energy, 
+                  while a Bach prelude scores low on the scale." ,"Numerical- 
+                  The duration of the track in milliseconds."," Numerical- 
+                  Detects the presence of an audience in the recording.
+                  Higher liveness values represent an increased probability 
+                  that the track was performed live. A value above 0.8 provides
+                  strong likelihood that the track is live.","","Numerical-
+                  A measure from 0.0 to 1.0 describing the musical positiveness 
+                  conveyed by a track. Tracks with high valence sound more 
+                  positive (e.g. happy, cheerful, euphoric), while tracks 
+                  with low valence sound more negative (e.g. sad, depressed, 
+                  angry).", "Numerical-The higher the value the more popular 
+                  the song is.Ranges from 0 to 1","Numerical-The overall
+                  loudness of a track in decibels (dB). Loudness values are 
+                  averaged across the entire track and are useful for 
+                  comparing relative loudness of tracks. Loudness is the 
+                  quality of a sound that is the primary psychological correlate 
+                  of physical strength (amplitude). Values typical range 
+                  between -60 and 0 db.", " Numerical-Speechiness detects
+                  the presence of spoken words in a track. The more exclusively
+                  speech-like the recording (e.g. talk show, audio book, poetry), 
+                  the closer to 1.0 the attribute value. Values above 0.66
+                  describe tracks that are probably made entirely of spoken words.
+                  Values between 0.33 and 0.66 describe tracks that may contain
+                  both music and speech, either in sections or layered, including
+                  such cases as rap music.Values below 0.33 most likely represent
+                  music and other non-speech-like tracks.","Numerical-Ranges from
+                  1921 to 2020","Categorical-(0 = Minor, 1 = Major)","Categorical-
+                  All keys on octave encoded as values ranging from 0 to 11, 
+                  starting on C as 0, C# as 1 and so on…","Categorical-List of artists  
+                  mentioned","Categorical-genre of the song"))
+
+
+kbl(df) %>%
+  kable_paper(full_width = F) %>%
+  column_spec(2, width = "30em")
+```
+
+###  Using k-nearest neighbours to predict the song popularity
+
++ ***Step 1: import dataset***
+
+```{r}
+library(class)
+library(gmodels)
+library(caret)
+spotify=read.csv(file = "/Users/nselvarajan/spotifydata/spotify.csv", sep = ",")
+spotify <- data.frame(spotify, stringsAsFactors = FALSE)
+head(spotify)
+```
+
++ ***Step 2: Clean the Data***
+
+```{r}
+spotify<-subset(spotify,select = c(acousticness ,danceability 
+                                   ,energy,instrumentalness,liveness,
+                                   loudness,speechiness,tempo,valence,
+                                   popularity))
+
+spotify$popularity[spotify$popularity>0.5]  <- 'Y'
+spotify$popularity[spotify$popularity==0.5]  <- 'N/Y'
+spotify$popularity[spotify$popularity<0.5]  <- 'N'
+spotify$popularity<-as.factor(spotify$popularity)
+str(spotify)
+```
++ ***Step 3: Data Splicing***
+  + The kNN algorithm is applied to the training data set and the results are verified on the test data set.
+  + I used  25% to test data and 75% to data train.
+  + After obtaining training and testing data sets, then we will create a separate data frame which has values to be compared with actual final values 
+
+```{r}
+indxTrain <- createDataPartition(y = spotify$popularity,p = .75,list = FALSE)
+training <- spotify[indxTrain,]
+testing <- spotify[-indxTrain,]
+```
+
++ ***Step 4:Data Pre-Processing With Caret ***
+
+  + The scale transform calculates the standard deviation for an attribute and divides each value by that standard deviation.
+  + The center transform calculates the mean for an attribute and subtracts it from each value.
+  + Combining the scale and center transforms will standardize your data.
+  + Attributes will have a mean value of 0 and a standard deviation of 1.
+  + The caret package in R provides a number of useful data transforms.
+  + Training transforms can prepared and applied automatically during model evaluation.
+  + Transforms applied during training are prepared using the preProcess() and passed to the train() function via the preProcess argument.
+
+
+```{r}
+trainX <- training[,names(training) != "popularity"]
+preProcValues <- preProcess(x = trainX,method = c("center", "scale"))
+```
++ ***Step 5:Model Training and Tuning***
+
+  + To control parameters for train, a trainControl function is used.
+  + The option "repeatedcv" method controls the number of repetitions for resampling used in repeated K-fold cross-validation. 
+
+```{r}
+set.seed(400)
+ctrl <- trainControl(method="repeatedcv",repeats = 3) 
+```
+### Performance improvement techniques and improved accuracy achieved.
+
++ ***Step 6:How to choose value for K to improve performance***
+
+ + Time to fit a knn model using caret with preprocessed values.
+ + From the output of the model,maximum accuracy(0.8842111) is achieved by  k = 27.
+ + We can observe accuracy for different types of k.
+
+```{r}
+knnFit <- train( popularity~ ., data = training, method = "knn",
+                 trControl = ctrl, preProcess = c("center","scale"), 
+                 tuneLength = 20)
+knnFit
+```
+
+```{r}
+plot(knnFit)
+
+```
+
++ ***Step 7: Making predictions***
+ +  We build knn by using training & test data sets. After building the model, then we can check the accuracy of forecasting using confusion matrix.
+
+```{r}
+knnPredict <- predict(knnFit,newdata = testing )
+```
+### Interpretation of the results and prediction accuracy achieved
+ + ***Evaluate the model performance***
+ + The accuracy of our model on the testing set is 88%.
+ + We can visualise the model’s performance using a confusion matrix.
+ + We can evaluvate the accuracy, precision and recall on the training and validation sets to evaluate the performance of knn algorithm.
+
+```{r}
+confusionMatrix(knnPredict, testing$popularity )
+```
+
+```{r}
+mean(knnPredict == testing$popularity)
+```
+### Overall insights obtained from the implemented project 
+ 
+ + Overall accuracy of the model is 88%.It is safe to assume that knn models can be trained on the audio feature data to predict the popularity.
+ + Sensitivity for popular song is 0.52030 and for unpopular song is 0.9571.
+ + Specificity for popular song is 0.95619 and for unpopular song is 0.5200
